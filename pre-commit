@@ -1,0 +1,56 @@
+#!/bin/bash
+
+#👇 This line is crucial for 'SourceTree' 👇
+export PATH=/usr/local/bin:$PATH
+
+SWIFT_LINT=$(which swiftlint)
+
+# exit if swiftlint is not installed
+if [ -z "${SWIFT_LINT}" ]; then
+  echo "SwiftLint does not exist, download from https://github.com/realm/SwiftLint"
+  exit 1
+fi
+
+EXIT_CODE=0
+
+function formatAndPrintViolation() {
+  while read -r line; do
+    FILE_PATH=$(echo "$line" | cut -d : -f 1 | rev | cut -d / -f 1 | rev)
+    L=$(echo "$line" | cut -d : -f 2)
+    C=$(echo "$line" | cut -d : -f 3)
+    TYPE=$(echo "$line" | cut -d : -f 4 | cut -c 2-)
+    VIOLATION=$(echo "$line" | cut -d : -f 5 | cut -c 2-)
+
+    if [ "$TYPE" == "warning" ]; then
+      echo -e "\n⚠️  $TYPE At: $FILE_PATH \n"
+    else
+      echo -e "\n🚨 $TYPE At: $FILE_PATH \n"
+    fi
+
+    printf "$VIOLATION at line $L and column $C\n"
+  done <<<"$1"
+}
+
+LINTABLE_FILES=()
+
+# To lint un-staged files
+CHANGED_FILES_UNSTAGED=$(git diff --diff-filter=d --name-only -- "*.swift")
+if [ "$CHANGED_FILES_UNSTAGED" ]; then
+  LINTABLE_FILES+=("$CHANGED_FILES_UNSTAGED")
+fi
+
+# To lint staged files
+CHANGED_FILES_STAGED=$(git diff --cached --diff-filter=d --name-only -- "*.swift")
+if [ "$CHANGED_FILES_STAGED" ]; then
+  LINTABLE_FILES+=("$CHANGED_FILES_STAGED")
+fi
+
+while read -r file; do
+  RESULT=$($SWIFT_LINT lint --quiet --path "$file")
+  if [ "$RESULT" ]; then
+    formatAndPrintViolation "$RESULT"
+    EXIT_CODE=1
+  fi
+done <<<"${LINTABLE_FILES[@]}"
+
+exit $EXIT_CODE
